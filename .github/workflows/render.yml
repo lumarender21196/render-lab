@@ -1,0 +1,61 @@
+name: render
+on:
+  workflow_dispatch:
+    inputs:
+      module: {description: scene module, default: moon4}
+      func: {description: frame function, default: frame4}
+      frames: {description: total frames, default: '5600'}
+      chunk: {description: frames per job, default: '700'}
+      audio: {description: audio file in audio/, default: moon_full_audio.m4a}
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          n=int("${{ inputs.frames }}");c=int("${{ inputs.chunk }}")
+          print("matrix="+json.dumps({"include":[{"a":a,"b":min(a+c,n)} for a in range(0,n,c)]}))
+          PY
+  render:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: tar xzf bundle.tgz
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-core libraqm0 && pip install pillow
+      - run: |
+          start=$(date +%s)
+          python3 render_chunk.py "${{ inputs.module }}" "${{ inputs.func }}" ${{ matrix.a }} ${{ matrix.b }}
+          echo "chunk ${{ matrix.a }}-${{ matrix.b }} took $(( $(date +%s)-start )) s, cpus $(nproc)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frames-${{ matrix.a }}
+          path: out
+          retention-days: 1
+  assemble:
+    needs: render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tar xzf bundle.tgz
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: frames-*
+          path: out
+          merge-multiple: true
+      - run: |
+          ffmpeg -v error -y -framerate 20 -i out/%05d.png -i "audio/${{ inputs.audio }}" -c:v libx264 -preset veryfast -crf 28 -pix_fmt yuv420p -c:a aac -b:a 96k -shortest video.mp4
+          ffprobe -v error -show_entries format=duration -of csv=p=0 video.mp4
+          ffmpeg -v error -i video.mp4 -f null - && echo DECODE_OK
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video
+          path: video.mp4
+          retention-days: 3
