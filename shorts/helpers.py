@@ -18,6 +18,7 @@ def rect(d,x0,y0,x1,y1,fill=None,outline=None,w=3,r=0):
     if r:d.rounded_rectangle([x0*S,y0*S,x1*S,y1*S],r*S,fill=fill,outline=outline,width=int(w*S))
     else:d.rectangle([x0*S,y0*S,x1*S,y1*S],fill=fill,outline=outline,width=int(w*S))
 def seg(p,a,l):return (p[0]+l*math.cos(math.radians(a)),p[1]+l*math.sin(math.radians(a)))
+MOOD=['smile'];SHADOW=[True]
 SKIN=(247,214,180);SHIRT=(70,120,200);PANTS=(55,60,95);HAIR=(60,40,30);SHOE=(40,34,34)
 def ln2(d,p,q,w,c,o=None):
     if o:d.line([(p[0]*S,p[1]*S),(q[0]*S,q[1]*S)],fill=o,width=int((w+3)*S));circ(d,p[0],p[1],(w+3)/2,fill=o);circ(d,q[0],q[1],(w+3)/2,fill=o)
@@ -26,7 +27,7 @@ def man(d,x,base,t,walk=0,armL=(100,100),armR=(80,80),tilt=0,lean=0,bob=1):
     """angles in degrees, 0=right, 90=down. arms (upper,fore). richer: shirt, pants, shoes, hair, face"""
     b=math.sin(t*2.5)*2*bob
     hip=(x+lean*0.3,base-80+b);neck=(x+lean,base-165+b)
-    d.ellipse([(x-34)*S,(base-4)*S,(x+34)*S,(base+10)*S],fill=(0,0,0,0) if False else (205,190,172))
+    if SHADOW[0]:d.ellipse([(x-34)*S,(base-4)*S,(x+34)*S,(base+10)*S],fill=(205,190,172))
     sw=math.sin(t*7)*28*walk
     for ph in (1,-1):
         f=(hip[0]+ph*(sw+8),base-4);kn=((hip[0]+f[0])/2+ph*3,(hip[1]+f[1])/2)
@@ -47,11 +48,25 @@ def man(d,x,base,t,walk=0,armL=(100,100),armR=(80,80),tilt=0,lean=0,bob=1):
     d.pieslice([(hx-29)*S,(hy-29)*S,(hx+29)*S,(hy+29)*S],185,355,fill=HAIR,outline=K,width=2*S)
     d.ellipse([(hx-29)*S,(hy-24)*S,(hx-16)*S,(hy+4)*S],fill=HAIR)
     ex=hx+9+tilt*0.2;ey=hy+3+tilt*0.15
+    md=MOOD[0]
     for k in (0,13):
-        circ(d,ex+k,ey,5.5,fill=(255,255,255),outline=K,w=1.5);circ(d,ex+k+1.5,ey+0.5,3,fill=K)
-        ln(d,(ex+k-5,ey-9),(ex+k+5,ey-10-(1 if k else 0)),2.5,K)
+        if md=='laugh':
+            d.arc([(ex+k-6)*S,(ey-5)*S,(ex+k+6)*S,(ey+5)*S],200,340,fill=K,width=int(3*S))
+        else:
+            r_=7 if md=='shock' else 5.5;pr=1.8 if md=='shock' else 3
+            circ(d,ex+k,ey,r_,fill=(255,255,255),outline=K,w=1.5);circ(d,ex+k+1.5,ey+0.5,pr,fill=K)
+        by_=-13 if md=='shock' else -9
+        if md=='worry':ln(d,(ex+k-5,ey-8+(3 if k==0 else -3)),(ex+k+5,ey-12+(-3 if k==0 else 3)),2.5,K)
+        else:ln(d,(ex+k-5,ey+by_),(ex+k+5,ey+by_-1-(1 if k else 0)),2.5,K)
     circ(d,ex-4,ey+10,4.5,fill=(245,160,150))
-    d.arc([(ex-2)*S,(ey+6)*S,(ex+16)*S,(ey+20)*S],20,160,fill=K,width=int(2.5*S))
+    if md=='shock':
+        d.ellipse([(ex+1)*S,(ey+9)*S,(ex+13)*S,(ey+24)*S],fill=(120,40,50),outline=K,width=2*S)
+    elif md=='laugh':
+        d.pieslice([(ex-3)*S,(ey+3)*S,(ex+17)*S,(ey+23)*S],0,180,fill=(120,40,50),outline=K,width=2*S)
+    elif md=='worry':
+        d.arc([(ex)*S,(ey+13)*S,(ex+14)*S,(ey+23)*S],200,340,fill=K,width=int(2.5*S))
+    else:
+        d.arc([(ex-2)*S,(ey+6)*S,(ex+16)*S,(ey+20)*S],20,160,fill=K,width=int(2.5*S))
     d.polygon([((neck[0]-3)*S,(neck[1]+4)*S),((neck[0]+3)*S,(neck[1]+4)*S),((neck[0]+8)*S,(neck[1]+28)*S),((neck[0])*S,(neck[1]+42)*S),((neck[0]-8)*S,(neck[1]+28)*S)],fill=RED,outline=K)
     return sh,[seg(seg(sh,a[0],38),a[1],36) for a in (armL,armR)]
 K=(45,36,32)
