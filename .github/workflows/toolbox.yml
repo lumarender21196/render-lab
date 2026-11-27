@@ -18,9 +18,10 @@ jobs:
         continue-on-error: true
         run: |
           s=$(date +%s)
-          pip install -q pillow numpy pycairo skia-python rlottie-python opencv-python-headless manim 2>&1 | tail -3
+          for p in pillow numpy pycairo skia-python rlottie-python opencv-python-headless manim; do
+            if pip install -q $p > pip_$p.log 2>&1; then echo "pip $p OK $(pip show $p | grep -E '^(Version|License)' | tr '\n' ' ')" | tee -a report.txt; else echo "pip $p FAILED: $(tail -2 pip_$p.log | tr '\n' ' ')" | tee -a report.txt; fi
+          done
           echo "pip install s: $(( $(date +%s)-s ))" | tee -a report.txt
-          pip show pycairo skia-python rlottie-python manim opencv-python-headless | grep -E "^(Name|Version|License)" | tee -a report.txt
       - name: sample
         continue-on-error: true
         run: |
