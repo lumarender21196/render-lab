@@ -28,7 +28,7 @@ jobs:
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-core libraqm0 && pip install pillow
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-core libraqm0 ffmpeg inkscape libcairo2-dev pkg-config python3-dev libegl1 libgl1 libgles2 && pip install -q pillow numpy pycairo skia-python opencv-python-headless
       - run: |
           start=$(date +%s)
           python3 render_chunk.py "${{ inputs.module }}" "${{ inputs.func }}" ${{ matrix.a }} ${{ matrix.b }}
