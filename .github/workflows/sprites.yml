@@ -1,0 +1,31 @@
+name: sprites
+on: workflow_dispatch
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        item: [ant, shoe, grass, drop]
+    steps:
+      - run: pip install -q torch --index-url https://download.pytorch.org/whl/cpu && pip install -q diffusers transformers accelerate safetensors pillow numpy
+      - run: |
+          cat > g.py <<'PY'
+          import sys,time,torch,os
+          from diffusers import AutoPipelineForText2Image
+          ST="flat 2d vector cartoon sticker, thick dark outline, bold colors, single object centered, isolated on a plain pure white background, no shadow, no text"
+          P={"ant":"a cute brown ant seen from the side, six legs, big round eyes, friendly, "+ST,
+             "shoe":"a big blue canvas sneaker seen from the side with white sole and laces, "+ST,
+             "grass":"a cluster of tall green grass blades with dark outlines, "+ST,
+             "drop":"a glossy blue water droplet with white highlight, "+ST}
+          it=sys.argv[1];os.makedirs("sp",exist_ok=True)
+          p=AutoPipelineForText2Image.from_pretrained("stabilityai/sdxl-turbo",torch_dtype=torch.float32,variant="fp16")
+          for seed in (1,2,3):
+              t=time.time()
+              im=p(P[it],num_inference_steps=3,guidance_scale=0.0,height=512,width=512,generator=torch.Generator().manual_seed(seed)).images[0]
+              im.convert("RGB").save(f"sp/{it}{seed}.jpg",quality=92);print(it,seed,round(time.time()-t,1),flush=True)
+          PY
+          python3 g.py ${{ matrix.item }} 2>&1 | grep -E "^(ant|shoe|grass|drop) |Error"
+      - uses: actions/upload-artifact@v4
+        with: {name: "sp-${{ matrix.item }}", path: sp, retention-days: 3}
