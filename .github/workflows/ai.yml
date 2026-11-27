@@ -1,0 +1,63 @@
+name: aitest
+on: workflow_dispatch
+jobs:
+  lic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: licences
+        run: |
+          for m in stabilityai/sd-turbo stabilityai/sdxl-turbo SimianLuo/LCM_Dreamshaper_v7 latent-consistency/lcm-lora-sdv1-5 stable-diffusion-v1-5/stable-diffusion-v1-5 Wan-AI/Wan2.1-T2V-1.3B-Diffusers Lightricks/LTX-Video segmind/tiny-sd; do
+            curl -s https://huggingface.co/api/models/$m | python3 -c "import sys,json;d=json.load(sys.stdin);print('$m','license=',(d.get('cardData') or {}).get('license'),'gated=',d.get('gated'),'size_files=',len(d.get('siblings',[])))" | tee -a lic.txt
+          done
+      - uses: actions/upload-artifact@v4
+        with: {name: lic, path: lic.txt, retention-days: 3}
+  img:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        m: [stabilityai/sd-turbo, stabilityai/sdxl-turbo, SimianLuo/LCM_Dreamshaper_v7]
+    steps:
+      - run: pip install -q torch --index-url https://download.pytorch.org/whl/cpu && pip install -q diffusers transformers accelerate safetensors
+      - run: |
+          cat > t.py <<'PY'
+          import time,sys,torch
+          from diffusers import AutoPipelineForText2Image
+          m=sys.argv[1];t=time.time()
+          p=AutoPipelineForText2Image.from_pretrained(m,torch_dtype=torch.float32,variant="fp16" if "turbo" in m else None) if "turbo" in m else AutoPipelineForText2Image.from_pretrained(m,torch_dtype=torch.float32)
+          print("load s",round(time.time()-t,1),flush=True)
+          for res,steps in [(512,4),(512,2)]:
+              if "sdxl" in m: res=512
+              t=time.time();im=p("simple flat vector illustration of a stick man standing on a hill, clean outlines, pastel sky",num_inference_steps=steps,guidance_scale=0.0 if "turbo" in m else 8.0,height=res,width=res).images[0]
+              print("gen",res,"steps",steps,"s",round(time.time()-t,1),flush=True)
+              im.save(f"out_{res}_{steps}.png")
+          PY
+          python3 t.py ${{ matrix.m }} 2>&1 | grep -v Warning | tail -15 | tee res.txt
+      - uses: actions/upload-artifact@v4
+        with: {name: "img-${{ strategy.job-index }}", path: "res.txt\nout_512_4.png", retention-days: 3}
+  vid:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        m: [Wan-AI/Wan2.1-T2V-1.3B-Diffusers, Lightricks/LTX-Video]
+    steps:
+      - run: pip install -q torch --index-url https://download.pytorch.org/whl/cpu && pip install -q diffusers transformers accelerate safetensors sentencepiece imageio imageio-ffmpeg ftfy
+      - run: |
+          cat > v.py <<'PY'
+          import time,sys,torch
+          from diffusers import DiffusionPipeline
+          from diffusers.utils import export_to_video
+          m=sys.argv[1];t=time.time()
+          p=DiffusionPipeline.from_pretrained(m,torch_dtype=torch.bfloat16)
+          print("load s",round(time.time()-t,1),flush=True)
+          t=time.time()
+          f=p(prompt="a stick man waves hello on a green hill, flat cartoon",height=256,width=384,num_frames=9,num_inference_steps=8).frames[0]
+          print("gen 384x256 9 frames 8 steps s",round(time.time()-t,1),flush=True)
+          export_to_video(f,"v.mp4",fps=8)
+          PY
+          timeout 3000 python3 v.py ${{ matrix.m }} 2>&1 | grep -v Warning | tail -15 | tee res.txt
+      - uses: actions/upload-artifact@v4
+        with: {name: "vid-${{ strategy.job-index }}", path: "res.txt", retention-days: 3}
