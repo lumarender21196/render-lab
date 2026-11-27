@@ -1,0 +1,111 @@
+name: toolbox
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: apt
+        continue-on-error: true
+        run: |
+          s=$(date +%s)
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg inkscape blender libcairo2-dev pkg-config python3-dev fonts-noto-core libraqm0 fonts-dejavu-core
+          echo "apt install s: $(( $(date +%s)-s ))" | tee -a report.txt
+          blender --version | head -1 | tee -a report.txt
+          inkscape --version | head -1 | tee -a report.txt
+      - name: pip
+        continue-on-error: true
+        run: |
+          s=$(date +%s)
+          pip install -q pillow numpy pycairo skia-python rlottie-python opencv-python-headless manim 2>&1 | tail -3
+          echo "pip install s: $(( $(date +%s)-s ))" | tee -a report.txt
+          pip show pycairo skia-python rlottie-python manim opencv-python-headless | grep -E "^(Name|Version|License)" | tee -a report.txt
+      - name: sample
+        continue-on-error: true
+        run: |
+          mkdir -p s
+          python3 - <<'PY' 2>&1 | tee -a report.txt
+          import math,time,cairo,skia
+          from PIL import Image,ImageDraw
+          def man_pil(i):
+              im=Image.new("RGB",(720,1280),(150,205,235));d=ImageDraw.Draw(im);t=i/24
+              x=360+80*math.sin(t*2);b=900;h=b-260
+              d.line([(x,b-110),(x,h)],fill=(20,20,20),width=6);d.ellipse([x-30,h-60,x+30,h],outline=(20,20,20),width=5,fill=(250,245,235))
+              for s in(-1,1):d.line([(x,b-110),(x+s*50*math.sin(t*6),b)],fill=(20,20,20),width=6);d.line([(x,h+30),(x+s*70,h+80+30*math.sin(t*6*s))],fill=(20,20,20),width=6)
+              return im
+          st=time.time()
+          for i in range(48):man_pil(i).save(f"s/pil_{i:03d}.png")
+          print("pillow 48 frames s:",round(time.time()-st,2))
+          def man_cairo(i):
+              sf=cairo.ImageSurface(cairo.FORMAT_RGB24,720,1280);c=cairo.Context(sf);t=i/24
+              g=cairo.LinearGradient(0,0,0,1280);g.add_color_stop_rgb(0,.45,.75,.95);g.add_color_stop_rgb(1,.8,.93,.8);c.set_source(g);c.paint()
+              x=360+80*math.sin(t*2);b=900;h=b-260
+              c.set_line_cap(cairo.LINE_CAP_ROUND);c.set_line_join(cairo.LINE_JOIN_ROUND)
+              c.set_source_rgba(0,0,0,.18);c.save();c.translate(x,b+8);c.scale(1,.18);c.arc(0,0,70,0,6.3);c.restore();c.fill()
+              c.set_source_rgb(.08,.08,.08);c.set_line_width(9)
+              c.move_to(x,b-110);c.line_to(x,h);c.stroke()
+              for s in(-1,1):
+                  c.move_to(x,b-110);c.curve_to(x+s*20,b-60,x+s*50*math.sin(t*6),b-40,x+s*50*math.sin(t*6),b);c.stroke()
+                  c.move_to(x,h+30);c.curve_to(x+s*30,h+40,x+s*60,h+60,x+s*70,h+80+30*math.sin(t*6*s));c.stroke()
+              c.arc(x,h-30,30,0,6.3);c.set_source_rgb(1,.97,.92);c.fill_preserve();c.set_source_rgb(.08,.08,.08);c.stroke()
+              c.arc(x+10,h-34,4,0,6.3);c.fill()
+              return sf
+          st=time.time()
+          for i in range(48):man_cairo(i).write_to_png(f"s/cairo_{i:03d}.png")
+          print("cairo 48 frames s:",round(time.time()-st,2))
+          st=time.time()
+          for i in range(48):
+              sf=skia.Surface(720,1280);cv=sf.getCanvas();cv.clear(skia.ColorSetRGB(150,205,235))
+              p=skia.Paint(AntiAlias=True,Color=skia.ColorBLACK,Style=skia.Paint.kStroke_Style,StrokeWidth=9,StrokeCap=skia.Paint.kRound_Cap)
+              x=360+80*math.sin(i/24*2);cv.drawLine(x,790,x,640,p);cv.drawCircle(x,610,30,p)
+              sf.makeImageSnapshot().save(f"s/skia_{i:03d}.png")
+          print("skia 48 frames s:",round(time.time()-st,2))
+          PY
+      - name: ffmpeg look filters
+        continue-on-error: true
+        run: |
+          s=$(date +%s)
+          ffmpeg -v error -y -framerate 24 -i s/cairo_%03d.png -c:v libx264 -pix_fmt yuv420p s/base.mp4
+          ffmpeg -v error -y -i s/base.mp4 -vf "minterpolate=fps=48:mi_mode=mci,tmix=frames=2,vignette=PI/3.5,noise=alls=3:allf=t,unsharp=3:3:0.4" -c:v libx264 -crf 22 -pix_fmt yuv420p s/fx.mp4
+          echo "ffmpeg minterpolate+tmix+vignette+grain 2s clip s: $(( $(date +%s)-s ))" | tee -a report.txt
+          ffmpeg -v error -y -i s/fx.mp4 -vf "select=eq(n\,30)" -frames:v 1 s/fx_frame.png
+      - name: svg and lottie
+        continue-on-error: true
+        run: |
+          echo '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280"><defs><filter id="b"><feGaussianBlur stdDeviation="6"/></filter></defs><rect width="720" height="1280" fill="#9ad"/><ellipse cx="360" cy="910" rx="90" ry="14" fill="#0006" filter="url(#b)"/><path d="M360 640V790M360 790Q330 850 320 900M360 790Q390 850 400 900" stroke="#111" stroke-width="10" fill="none" stroke-linecap="round"/><circle cx="360" cy="610" r="32" fill="#fff" stroke="#111" stroke-width="8"/></svg>' > s/t.svg
+          s=$(date +%s); inkscape s/t.svg --export-type=png --export-filename=s/ink.png; echo "inkscape svg->png s: $(( $(date +%s)-s ))" | tee -a report.txt
+      - name: blender
+        continue-on-error: true
+        run: |
+          cat > b.py <<'PY'
+          import bpy,time
+          bpy.ops.wm.read_factory_settings(use_empty=True)
+          sc=bpy.context.scene;sc.render.engine="BLENDER_WORKBENCH";sc.render.resolution_x=720;sc.render.resolution_y=1280
+          bpy.ops.mesh.primitive_uv_sphere_add(radius=1,location=(0,0,0));bpy.ops.object.camera_add(location=(0,-6,0),rotation=(1.5708,0,0));sc.camera=bpy.context.object
+          sc.render.filepath="//s/blender.png";bpy.ops.render.render(write_still=True)
+          PY
+          s=$(date +%s); blender -b -P b.py 2>&1 | tail -2; echo "blender workbench 1 frame s: $(( $(date +%s)-s ))" | tee -a report.txt
+      - name: manim
+        continue-on-error: true
+        run: |
+          cat > m.py <<'PY'
+          from manim import *
+          class A(Scene):
+              def construct(self):
+                  c=Circle(color=BLUE);self.play(Create(c),run_time=1);self.play(c.animate.shift(RIGHT*2),run_time=1)
+          PY
+          s=$(date +%s); manim -ql --format=mp4 -o m m.py A 2>&1 | tail -3; echo "manim 2s clip s: $(( $(date +%s)-s ))" | tee -a report.txt
+          cp media/videos/m/480p15/m.mp4 s/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toolbox-report
+          path: |
+            report.txt
+            s/fx_frame.png
+            s/ink.png
+            s/blender.png
+            s/cairo_010.png
+            s/pil_010.png
+            s/skia_010.png
+          retention-days: 3
