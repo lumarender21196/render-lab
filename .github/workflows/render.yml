@@ -28,7 +28,6 @@ jobs:
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
-      - run: tar xzf bundle.tgz
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-core libraqm0 && pip install pillow
       - run: |
           start=$(date +%s)
@@ -44,14 +43,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tar xzf bundle.tgz
       - uses: actions/download-artifact@v4
         with:
           pattern: frames-*
           path: out
           merge-multiple: true
       - run: |
-          ffmpeg -v error -y -framerate 20 -i out/%05d.png -i "audio/${{ inputs.audio }}" -c:v libx264 -preset veryfast -crf 28 -pix_fmt yuv420p -c:a aac -b:a 96k -shortest video.mp4
+          ffmpeg -v error -y -framerate 20 -i out/%05d.png -c:v libx264 -preset veryfast -crf 28 -pix_fmt yuv420p video.mp4
           ffprobe -v error -show_entries format=duration -of csv=p=0 video.mp4
           ffmpeg -v error -i video.mp4 -f null - && echo DECODE_OK
       - uses: actions/upload-artifact@v4
