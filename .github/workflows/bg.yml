@@ -1,0 +1,31 @@
+name: bg
+on: workflow_dispatch
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        scene: [meadow, candy, night]
+    steps:
+      - run: pip install -q torch --index-url https://download.pytorch.org/whl/cpu && pip install -q diffusers transformers accelerate safetensors pillow
+      - run: |
+          cat > g.py <<'PY'
+          import sys,time,torch,os
+          from diffusers import AutoPipelineForText2Image
+          P={"meadow":"flat 2d vector cartoon background, bright blue sky with soft white clouds, distant green rolling hills, thick dark outlines, simple shapes, empty scenery, no people, no characters, no text",
+          "candy":"flat 2d vector cartoon background, pastel pink and light blue sky, fluffy clouds, distant gentle hills, thick dark outlines, simple shapes, empty scenery, no people, no text",
+          "night":"flat 2d vector cartoon night background, deep blue starry sky with a crescent moon, distant dark hills, thick dark outlines, simple shapes, empty scenery, no people, no text"}
+          sc=sys.argv[1];os.makedirs("bgs",exist_ok=True)
+          for m,tag in (("stabilityai/sd-turbo","sd"),("stabilityai/sdxl-turbo","xl")):
+              kw=dict(variant="fp16") if tag=="xl" else {}
+              p=AutoPipelineForText2Image.from_pretrained(m,torch_dtype=torch.float32,**kw)
+              for seed in (1,2):
+                  t=time.time()
+                  im=p(P[sc],num_inference_steps=3 if tag=="xl" else 4,guidance_scale=0.0,height=768,width=512,generator=torch.Generator().manual_seed(seed)).images[0]
+                  im.convert("RGB").save(f"bgs/{sc}_{tag}{seed}.jpg",quality=90);print(sc,tag,seed,round(time.time()-t,1),flush=True)
+          PY
+          python3 g.py ${{ matrix.scene }} 2>&1 | grep -E "^(meadow|candy|night)|Error" 
+      - uses: actions/upload-artifact@v4
+        with: {name: "bgs-${{ matrix.scene }}", path: bgs, retention-days: 3}
