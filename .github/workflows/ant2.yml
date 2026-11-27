@@ -1,0 +1,46 @@
+name: ant2
+on:
+  workflow_dispatch:
+    inputs:
+      bgrun: {description: bg run id, default: '46010523648'}
+      sprun: {description: sprites run id, default: '46016197576'}
+      bg_meadow: {description: meadow bg, default: meadow_xl1}
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: [ar, en]
+        a: [0, 60, 120, 180, 240, 300, 360, 420]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {pattern: 'bgs-meadow', merge-multiple: true, path: shorts/bgs, run-id: '${{ inputs.bgrun }}', github-token: '${{ github.token }}'}
+      - uses: actions/download-artifact@v4
+        with: {pattern: 'sp-*', merge-multiple: true, path: shorts/sp, run-id: '${{ inputs.sprun }}', github-token: '${{ github.token }}'}
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-core libraqm0 fonts-dejavu-core ffmpeg && pip install -q pillow numpy
+      - env:
+          BG_meadow: ${{ inputs.bg_meadow }}
+        run: |
+          cd shorts
+          b=$(( ${{ matrix.a }} + 60 ))
+          if [ "${{ matrix.lang }}" = en ]; then export NOAR=1 SUF=_en; fi
+          python3 whatif_ant2.py ${{ matrix.a }} $b
+          ffmpeg -v error -y -framerate 24 -start_number ${{ matrix.a }} -i ant2$SUF/%04d.png -frames:v 60 -c:v libx264 -crf 14 -preset medium -pix_fmt yuv420p -g 24 chunk_${{ matrix.lang }}_$(printf %03d ${{ matrix.a }}).mp4
+      - uses: actions/upload-artifact@v4
+        with: {name: 'c-${{ matrix.lang }}-${{ matrix.a }}', path: 'shorts/chunk_*.mp4', retention-days: 2}
+  join:
+    needs: render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {pattern: 'c-*', merge-multiple: true, path: c}
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: |
+          cd c
+          for l in ar en; do ls chunk_${l}_*.mp4 | sort | sed "s/^/file /" > l_$l.txt; ffmpeg -v error -y -f concat -i l_$l.txt -c copy ../silent_ant2_$l.mp4; done
+          cd ..; ls -la silent_*
+      - uses: actions/upload-artifact@v4
+        with: {name: silent2, path: 'silent_ant2_*.mp4', retention-days: 3}
